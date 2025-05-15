@@ -1,2 +1,5 @@
 # AIFX_PROJECT
 Forex analyze by using ai and technical indicators
+在datax裡面會有兩個json,today的是擷取新聞原始資料，semtiment是ai分析過情緒後的資料
+usd_jpy.csv會更根據執行當下往回推一個禮拜的所有小時k線去做紀錄
+在config.py裡面會有需要api key 目前用的是HUGGINGFACE，請去註冊帳戶並建立自己的api，免費使用
