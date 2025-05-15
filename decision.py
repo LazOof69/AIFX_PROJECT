@@ -1,67 +1,111 @@
 import pandas as pd
 import json
+from textwrap import shorten
 
-def make_final_decision(price_path="data/usd_jpy.csv", sentiment_path="data/news_sentiment.json"):
-    print("\n📊 綜合技術分析與新聞情緒進行決策...")
+def make_final_decision(price_path="data/usd_jpy.csv",
+                        sentiment_path="data/news_sentiment.json",
+                        sample_titles=3):
+    print("\n📊 綜合技術分析與新聞情緒進行決策...\n")
 
-    # --- 1. 技術分析 ---
-    df = pd.read_csv(price_path)
-    df = df.dropna(subset=["EMA_5", "EMA_20", "MACD", "MACD_Signal", "RSI"])  # 避免 NaN
+    # ==========  1. 技術分析  ==================================================
+    df = pd.read_csv(price_path).dropna(subset=[
+        "EMA_5", "EMA_20", "RSI", "STOCH_K",
+        "ADX", "BB_WIDTH"
+    ])
     latest = df.iloc[-1]
-
     tech_signals = []
-    if latest["EMA_5"] > latest["EMA_20"]:
-        tech_signals.append("EMA短期上穿 → 看多")
-    else:
-        tech_signals.append("EMA短期下穿 → 看空")
+    bull_tech, bear_tech = 0.0, 0.0       # 用浮點數方便含權重
 
-    if latest["MACD"] > latest["MACD_Signal"]:
-        tech_signals.append("MACD 多頭排列 → 看多")
+    # ---- 趨勢：EMA 交叉（需 ADX ≥ 25） ----
+    if latest["ADX"] >= 25:
+        if latest["EMA_5"] > latest["EMA_20"]:
+            tech_signals.append("EMA 5>20 且 ADX≥25 → 趨勢偏多 (+1)")
+            bull_tech += 1
+        else:
+            tech_signals.append("EMA 5<20 且 ADX≥25 → 趨勢偏空 (-1)")
+            bear_tech += 1
     else:
-        tech_signals.append("MACD 空頭排列 → 看空")
+        tech_signals.append("ADX<25 → 趨勢不明，不計分")
 
+    # ---- 動能：RSI ----
     if latest["RSI"] > 70:
-        tech_signals.append("RSI 過熱 (>70) → 看多")
+        tech_signals.append(f"RSI {latest['RSI']:.1f}>70 → 多頭動能 (+1)")
+        bull_tech += 1
     elif latest["RSI"] < 30:
-        tech_signals.append("RSI 超賣 (<30) → 看空")
-    else:
-        tech_signals.append("RSI 中性")
+        tech_signals.append(f"RSI {latest['RSI']:.1f}<30 → 空頭動能 (-1)")
+        bear_tech += 1
 
-    # 統計技術面看多 / 看空分數
-    tech_score = sum("看多" in signal for signal in tech_signals) - sum("看空" in signal for signal in tech_signals)
+    # ---- 動能：Stochastic K ----
+    if latest["STOCH_K"] > 80:
+        tech_signals.append(f"Stoch_K {latest['STOCH_K']:.1f}>80 → 動能轉弱 (-1)")
+        bear_tech += 1
+    elif latest["STOCH_K"] < 20:
+        tech_signals.append(f"Stoch_K {latest['STOCH_K']:.1f}<20 → 動能轉強 (+1)")
+        bull_tech += 1
 
-    # --- 2. 新聞情緒分析 ---
+    # ---- 波動：BB_WIDTH ----
+    if latest["BB_WIDTH"] > 0.04:  # >4%
+        tech_signals.append(f"布林寬度 {latest['BB_WIDTH']:.2%}>4% → 趨勢延續，技術總分 ×1.5")
+        bull_tech *= 1.5
+        bear_tech *= 1.5
+
+    tech_score = bull_tech - bear_tech
+    tech_total = bull_tech + bear_tech
+    tech_bull_pct = (bull_tech / tech_total * 100) if tech_total else 0
+    tech_bear_pct = (bear_tech / tech_total * 100) if tech_total else 0
+
+    # ==========  2. 新聞情緒  ==================================================
     with open(sentiment_path, "r", encoding="utf-8") as f:
         sentiment_data = json.load(f)
 
-    pos, neg, neu = 0, 0, 0
+    bull_news, bear_news, neu_news = 0, 0, 0
+    bull_titles, bear_titles = [], []
+
     for item in sentiment_data:
-        analysis = item.get("analysis", "")
+        analysis = item.get("analysis", "").lower()
         if "positive" in analysis or "看多" in analysis:
-            pos += 1
+            bull_news += 1
+            if len(bull_titles) < sample_titles:
+                bull_titles.append(shorten(item["title"], 80))
         elif "negative" in analysis or "看空" in analysis:
-            neg += 1
-        elif "neutral" in analysis or "中性" in analysis:
-            neu += 1
+            bear_news += 1
+            if len(bear_titles) < sample_titles:
+                bear_titles.append(shorten(item["title"], 80))
+        else:
+            neu_news += 1
 
-    total_news = pos + neg + neu
-    news_score = pos - neg
+    total_news = bull_news + bear_news + neu_news
+    news_score = bull_news - bear_news
+    news_bull_pct = bull_news / total_news * 100 if total_news else 0
+    news_bear_pct = bear_news / total_news * 100 if total_news else 0
 
-    # --- 綜合評估 ---
+    # ==========  3. 綜合結論  ==================================================
     final_score = tech_score + news_score
     if final_score >= 3:
-        conclusion = "📈 今日判斷：看多"
+        conclusion = "📈 **今日總體偏多**"
     elif final_score <= -3:
-        conclusion = "📉 今日判斷：看空"
+        conclusion = "📉 **今日總體偏空**"
     else:
-        conclusion = "⚖️ 今日判斷：中性"
+        conclusion = "⚖️ **今日觀望 / 中性**"
 
-    # --- 結果輸出 ---
+    # ==========  4. 輸出報告  =================================================
     print(conclusion)
-    print("\n🔍 技術分析依據：")
+    print(f"➡️ 多空比 (技術/新聞綜合): {bull_tech + bull_news:.1f} 多 ╱ {bear_tech + bear_news:.1f} 空")
+
+    print("\n--- 技術面詳解 ----------------")
     for s in tech_signals:
-        print(" -", s)
+        print("•", s)
+    print(f"🔢 技術得分：{tech_score:+.1f}　(多 {tech_bull_pct:.1f}% / 空 {tech_bear_pct:.1f}%)")
 
-    print(f"\n📰 新聞分析統計：{total_news} 則（看多 {pos} / 看空 {neg} / 中性 {neu}）")
-    print(f"📊 綜合分數：技術 {tech_score:+d} + 新聞 {news_score:+d} = 總分 {final_score:+d}\n")
+    print("\n--- 新聞面詳解 ----------------")
+    print(f"總計 {total_news} 則 ｜ 多 {bull_news} ({news_bull_pct:.1f}%) / 空 {bear_news} ({news_bear_pct:.1f}%) / 中性 {neu_news}")
+    if bull_titles:
+        print("📚 多方代表標題:")
+        for t in bull_titles:
+            print("  -", t)
+    if bear_titles:
+        print("📚 空方代表標題:")
+        for t in bear_titles:
+            print("  -", t)
 
+    print(f"\n🧮 綜合評分：技術 {tech_score:+.1f}  +  新聞 {news_score:+.0f}  =  {final_score:+.1f}\n")
