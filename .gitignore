@@ -1,0 +1,12 @@
+# 忽略含有私密金鑰的檔案
+config.py
+.env
+
+# 忽略執行後產生的資料
+data/
+*.csv
+*.json
+
+# Python 編譯與快取
+__pycache__/
+*.pyc
