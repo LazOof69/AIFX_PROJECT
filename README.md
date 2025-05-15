@@ -9,7 +9,7 @@ AIFX 是一套自動化的外匯分析系統，專為 USD/JPY 匯率打造。
 - 📈 自動抓取 USD/JPY 匯率（來自 Yahoo Finance）
 - 📰 多來源新聞整合（NHK、WSJ、BBC、CNBC）
 - 🤖 使用 HuggingFace FinBERT 模型分析每則新聞情緒（看多 / 看空 / 中性）
-- 📊 計算 RSI、EMA、MACD 等技術指標
+- 📊 計算 RSI、EMA、STOCH K、布林通道 等技術指標
 - 🧠 綜合技術 + 新聞情緒，自動判斷今日交易方向
 - 📂 所有分析儲存為 JSON/CSV 檔案（可供進一步使用）
 
